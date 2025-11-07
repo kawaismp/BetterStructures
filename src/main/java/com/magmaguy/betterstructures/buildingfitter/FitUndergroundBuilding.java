@@ -9,19 +9,20 @@ import org.bukkit.Chunk;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.World;
-import org.bukkit.util.Vector;
 
 import java.util.concurrent.ThreadLocalRandom;
 
 public class FitUndergroundBuilding extends FitAnything {
 
-    private int lowestY;
-    private int highestY;
+    private final int lowestY;
+    private final int highestY;
 
-    //For commands
-    public FitUndergroundBuilding(Chunk chunk, SchematicContainer schematicContainer, int lowestY, int highestY, GeneratorConfigFields.StructureType structureType) {
+    // Reused mutable objects
+    private final Location workLoc = new Location(null, 0, 0, 0);
+
+    public FitUndergroundBuilding(Chunk chunk, SchematicContainer schematicContainer, int lowestY, int highestY, GeneratorConfigFields.StructureType type) {
         super(schematicContainer);
-        super.structureType = structureType;
+        this.structureType = type;
         this.lowestY = lowestY;
         this.highestY = highestY;
         this.schematicContainer = schematicContainer;
@@ -29,226 +30,201 @@ public class FitUndergroundBuilding extends FitAnything {
         scan(chunk);
     }
 
-    public FitUndergroundBuilding(Chunk chunk, int lowestY, int highestY, GeneratorConfigFields.StructureType structureType) {
+    public FitUndergroundBuilding(Chunk chunk, int lowestY, int highestY, GeneratorConfigFields.StructureType type) {
         super();
-        super.structureType = structureType;
+        this.structureType = type;
         this.lowestY = lowestY;
         this.highestY = highestY;
         scan(chunk);
     }
 
     private void scan(Chunk chunk) {
-        //Note about the adjustments:
-        //The 8 offset on x and y is to center the anchor on the chunk
-        Location originalLocation = new Location(chunk.getWorld(), chunk.getX() * 16D, 0, chunk.getZ() * 16D).add(new Vector(8, 0, 8));
-        switch (chunk.getWorld().getEnvironment()) {
-            case NORMAL:
-            case CUSTOM:
-                originalLocation.setY(ThreadLocalRandom.current().nextInt(lowestY, highestY));
-                break;
-            case NETHER:
-                if (structureType == GeneratorConfigFields.StructureType.UNDERGROUND_SHALLOW) {
-                    boolean streak = false;
-                    int lowPoint = 0;
-                    int highPoint = 0;
-                    int tolerance = 3;
-                    for (int y = lowestY; y < highestY; y++) {
-                        Location currentLocation = originalLocation.clone();
-                        currentLocation.setY(y);
-                        if (currentLocation.getBlock().getType().isSolid()) {
-                            if (streak) {
-                                highPoint = y;
-                            } else {
-                                lowPoint = y;
-                                streak = true;
-                            }
-                        } else {
-                            if (currentLocation.getBlock().getType() == Material.VOID_AIR ||
-                                    currentLocation.getBlock().getType() == Material.BEDROCK ||
-                                    tolerance == 0) {
-                                if (streak) {
-                                    streak = false;
-                                    if (highPoint - lowPoint >= 20)
-                                        break;
-                                    if (currentLocation.getBlock().getType() == Material.VOID_AIR ||
-                                            currentLocation.getBlock().getType() == Material.BEDROCK)
-                                        return;
-                                    tolerance = 3;
-                                }
-                            } else {
-                                if (streak) {
-                                    tolerance--;
-                                    highPoint = y;
-                                }
-                            }
-                        }
-                    }
-                    if (highPoint - lowPoint < 20) {
-                        //Case in which no ground was found which could be used as a valid underground surface
-                        return;
-                    }
-                    if (highPoint - lowPoint > 30) {
-                        originalLocation.setY(ThreadLocalRandom.current().nextInt(lowPoint + 1, highPoint - 20));
-                    } else {
-                        originalLocation.setY(lowPoint + 1D);
-                    }
-                } else {
-                    boolean streak = false;
-                    int lowPoint = 0;
-                    int highPoint = 0;
-                    int tolerance = 3;
-                    for (int y = highestY; y > lowestY; y--) {
-                        Location currentLocation = originalLocation.clone();
-                        currentLocation.setY(y);
-                        if (currentLocation.getBlock().getType().isSolid()) {
-                            if (streak) {
-                                lowPoint = y;
-                            } else {
-                                highPoint = y;
-                                streak = true;
-                            }
-                        } else {
-                            if (currentLocation.getBlock().getType() == Material.VOID_AIR ||
-                                    currentLocation.getBlock().getType() == Material.BEDROCK ||
-                                    tolerance == 0) {
-                                if (streak) {
-                                    streak = false;
-                                    if (highPoint - lowPoint >= 20)
-                                        break;
-                                    if (currentLocation.getBlock().getType() == Material.VOID_AIR ||
-                                            currentLocation.getBlock().getType() == Material.BEDROCK)
-                                        return;
-                                    tolerance = 3;
-                                }
-                            } else {
-                                if (streak) {
-                                    tolerance--;
-                                    lowPoint = y;
-                                }
-                            }
-                        }
-                    }
-                    if (highPoint - lowPoint < 20) {
-                        //Case in which no ground was found which could be used as a valid underground surface
-                        return;
-                    }
-                    if (highPoint - lowPoint > 30) {
-                        originalLocation.setY(ThreadLocalRandom.current().nextInt(lowPoint, highPoint - 20));
-                    } else {
-                        originalLocation.setY(lowPoint + 1D);
-                    }
-                }
-                break;
-            case THE_END:
-                if (structureType == GeneratorConfigFields.StructureType.UNDERGROUND_SHALLOW) {
-                    boolean streak = false;
-                    int lowPoint = 0;
-                    int highPoint = 0;
-                    int tolerance = 3;
-                    for (int y = lowestY; y < highestY; y++) {
-                        Location currentLocation = originalLocation.clone();
-                        currentLocation.setY(y);
-                        if (currentLocation.getBlock().getType().isSolid()) {
-                            if (streak) {
-                                highPoint = y;
-                            } else {
-                                lowPoint = y;
-                                streak = true;
-                            }
-                        } else {
-                            if (currentLocation.getBlock().getType() == Material.VOID_AIR ||
-                                    currentLocation.getBlock().getType() == Material.BEDROCK ||
-                                    tolerance == 0) {
-                                if (streak) {
-                                    streak = false;
-                                    if (highPoint - lowPoint >= 20)
-                                        break;
-                                    if (currentLocation.getBlock().getType() == Material.VOID_AIR ||
-                                            currentLocation.getBlock().getType() == Material.BEDROCK)
-                                        return;
-                                    tolerance = 3;
-                                }
-                            } else {
-                                if (streak) {
-                                    tolerance--;
-                                    highPoint = y;
-                                }
-                            }
-                        }
-                    }
-                    if (highPoint - lowPoint < 20) {
-                        //Case in which no ground was found which could be used as a valid underground surface
-                        return;
-                    }
-                    if (highPoint - lowPoint > 30) {
-                        originalLocation.setY(ThreadLocalRandom.current().nextInt(lowPoint + 1, highPoint - 20));
-                    } else {
-                        originalLocation.setY(lowPoint + 1D);
-                    }
-                }
-                break;
-        }
+        World world = chunk.getWorld();
+        Location base = getChunkCenter(chunk, world);
 
-        randomizeSchematicContainer(originalLocation, structureType);
-        if (schematicClipboard == null) {
-            //Bukkit.getLogger().info("Did not spawn structure in biome " + originalLocation.getBlock().getBiome() + " because no valid schematics exist for it.");
-            return;
-        }
+        if (!determineY(base, world)) return;
+
+        randomizeSchematicContainer(base, structureType);
+        if (schematicClipboard == null) return;
 
         schematicOffset = WorldEditUtils.getSchematicOffset(schematicClipboard);
+        fixWorldBounds(base, world);
+        searchOptimalPlacement(base, world);
 
-        //Make sure the schematic will not go beyond the bedrock level
-        switch (originalLocation.getWorld().getEnvironment()) {
-            case NORMAL:
-            case CUSTOM:
-                if (originalLocation.getY() - Math.abs(schematicOffset.getY()) < DefaultConfig.getLowestYNormalCustom())
-                    originalLocation.setY(DefaultConfig.getLowestYNormalCustom() + 1 + Math.abs(schematicOffset.getY()));
-                else if (originalLocation.getY() + Math.abs(schematicOffset.getY()) - schematicClipboard.getRegion().getHeight() > DefaultConfig.getHighestYNormalCustom())
-                    originalLocation.setY(DefaultConfig.getHighestYNormalCustom() - schematicClipboard.getRegion().getHeight() + Math.abs(schematicOffset.getY()));
-                break;
-            case NETHER:
-                if (originalLocation.getY() - Math.abs(schematicOffset.getY()) < DefaultConfig.getLowestYNether())
-                    originalLocation.setY(DefaultConfig.getLowestYNether() + 1 + Math.abs(schematicOffset.getY()));
-                else if (originalLocation.getY() + Math.abs(schematicOffset.getY()) - schematicClipboard.getRegion().getHeight() > DefaultConfig.getHighestYNether())
-                    originalLocation.setY(DefaultConfig.getHighestYNether() - schematicClipboard.getRegion().getHeight() + Math.abs(schematicOffset.getY()));
-                break;
-            case THE_END:
-                if (originalLocation.getY() - Math.abs(schematicOffset.getY()) < DefaultConfig.getLowestYEnd())
-                    originalLocation.setY(DefaultConfig.getLowestYEnd() + 1 + Math.abs(schematicOffset.getY()));
-                else if (originalLocation.getY() + Math.abs(schematicOffset.getY()) - schematicClipboard.getRegion().getHeight() > DefaultConfig.getLowestYEnd())
-                    originalLocation.setY(DefaultConfig.getLowestYEnd() - schematicClipboard.getRegion().getHeight() + Math.abs(schematicOffset.getY()));
-                break;
-        }
-
-        chunkScan(originalLocation, 0, 0);
-        if (highestScore < 90)
-            for (int chunkX = -searchRadius; chunkX < searchRadius + 1; chunkX++) {
-                for (int chunkZ = -searchRadius; chunkZ < searchRadius + 1; chunkZ++) {
-                    if (chunkX == 0 && chunkZ == 0) continue;
-                    chunkScan(originalLocation, chunkX, chunkZ);
-                    if (highestScore > 90) break;
-                }
-                if (highestScore > 90) break;
-            }
-
-        if (location == null)
-            return;
-
-        paste(location);
+        if (location != null) paste(location);
     }
 
-    private void chunkScan(Location originalLocation, int chunkX, int chunkZ) {
-        Location iteratedLocation = originalLocation.clone().add(new Vector(chunkX * 16, 0, chunkZ * 16));
-        double score = TerrainAdequacy.scan(scanStep, schematicClipboard, iteratedLocation, schematicOffset, TerrainAdequacy.ScanType.UNDERGROUND);
-        if (!originalLocation.getWorld().getEnvironment().equals(World.Environment.NETHER)) {
-            if (score < 70)
+    private static Location getChunkCenter(Chunk chunk, World world) {
+        double x = (chunk.getX() << 4) + 8.0;
+        double z = (chunk.getZ() << 4) + 8.0;
+        return new Location(world, x, 0, z);
+    }
+
+    /**
+     * Determines initial Y placement based on world type.
+     */
+    private boolean determineY(Location base, World world) {
+        return switch (world.getEnvironment()) {
+            case NORMAL, CUSTOM -> {
+                base.setY(ThreadLocalRandom.current().nextInt(lowestY, highestY));
+                yield true;
+            }
+            case NETHER -> findNetherY(base);
+            case THE_END -> structureType != GeneratorConfigFields.StructureType.UNDERGROUND_SHALLOW || findEndY(base);
+        };
+    }
+
+    private boolean findNetherY(Location base) {
+        final boolean shallow = structureType == GeneratorConfigFields.StructureType.UNDERGROUND_SHALLOW;
+        final int dir = shallow ? 1 : -1;
+        int y = shallow ? lowestY : highestY;
+
+        int low = 0, high = 0, tolerance = 3;
+        boolean inSolid = false;
+
+        World world = base.getWorld();
+        workLoc.setWorld(world);
+        workLoc.setX(base.getX());
+        workLoc.setZ(base.getZ());
+
+        while (shallow ? y < highestY : y > lowestY) {
+            workLoc.setY(y);
+            Material mat = workLoc.getBlock().getType();
+
+            if (mat.isSolid()) {
+                if (!inSolid) {
+                    inSolid = true;
+                    if (shallow) low = y; else high = y;
+                } else {
+                    if (shallow) high = y; else low = y;
+                }
+            } else if (inSolid) {
+                if (mat == Material.VOID_AIR || mat == Material.BEDROCK || tolerance == 0) {
+                    inSolid = false;
+                    if (Math.abs(high - low) >= 20) break;
+                    if (mat == Material.VOID_AIR || mat == Material.BEDROCK) return false;
+                    tolerance = 3;
+                } else {
+                    tolerance--;
+                    if (shallow) high = y; else low = y;
+                }
+            }
+            y += dir;
+        }
+
+        int diff = Math.abs(high - low);
+        if (diff < 20) return false;
+
+        if (diff > 30) {
+            int min = Math.min(low, high) + 1;
+            int max = Math.max(low, high) - 20;
+            base.setY(ThreadLocalRandom.current().nextInt(min, max));
+        } else {
+            base.setY(Math.min(low, high) + 1.0);
+        }
+        return true;
+    }
+
+    private boolean findEndY(Location base) {
+        int low = 0, high = 0, tolerance = 3;
+        boolean inSolid = false;
+
+        World world = base.getWorld();
+        workLoc.setWorld(world);
+        workLoc.setX(base.getX());
+        workLoc.setZ(base.getZ());
+
+        for (int y = lowestY; y < highestY; y++) {
+            workLoc.setY(y);
+            Material mat = workLoc.getBlock().getType();
+
+            if (mat.isSolid()) {
+                if (!inSolid) {
+                    inSolid = true;
+                    low = y;
+                }
+                high = y;
+            } else if (inSolid) {
+                if (mat == Material.VOID_AIR || mat == Material.BEDROCK || tolerance == 0) {
+                    inSolid = false;
+                    if (high - low >= 20) break;
+                    if (mat == Material.VOID_AIR || mat == Material.BEDROCK) return false;
+                    tolerance = 3;
+                } else {
+                    tolerance--;
+                    high = y;
+                }
+            }
+        }
+
+        int diff = high - low;
+        if (diff < 20) return false;
+
+        base.setY(diff > 30
+                ? ThreadLocalRandom.current().nextInt(low + 1, high - 20)
+                : low + 1.0);
+        return true;
+    }
+
+    private void fixWorldBounds(Location base, World world) {
+        double y = base.getY();
+        double height = schematicClipboard.getRegion().getHeight();
+        double offsetY = Math.abs(schematicOffset.getY());
+
+        double minY, maxY;
+        switch (world.getEnvironment()) {
+            case NORMAL:
+            case CUSTOM:
+                minY = DefaultConfig.getLowestYNormalCustom();
+                maxY = DefaultConfig.getHighestYNormalCustom();
+                break;
+            case NETHER:
+                minY = DefaultConfig.getLowestYNether();
+                maxY = DefaultConfig.getHighestYNether();
+                break;
+            case THE_END:
+                minY = DefaultConfig.getLowestYEnd();
+                maxY = DefaultConfig.getHighestYEnd();
+                break;
+            default:
                 return;
-        } else if (score < 50)
-            return;
+        }
+
+        if (y - offsetY < minY) {
+            base.setY(minY + 1 + offsetY);
+        } else if (y + offsetY - height > maxY) {
+            base.setY(maxY - height + offsetY);
+        }
+    }
+
+    private void searchOptimalPlacement(Location base, World world) {
+        chunkScan(base, 0, 0);
+        if (highestScore >= 90) return;
+
+        for (int x = -searchRadius; x <= searchRadius; x++) {
+            for (int z = -searchRadius; z <= searchRadius; z++) {
+                if (x == 0 && z == 0) continue;
+                chunkScan(base, x, z);
+                if (highestScore >= 90) return;
+            }
+        }
+    }
+
+    private void chunkScan(Location base, int cx, int cz) {
+        World world = base.getWorld();
+        workLoc.setWorld(world);
+        workLoc.setX(base.getX() + (cx << 4));
+        workLoc.setY(base.getY());
+        workLoc.setZ(base.getZ() + (cz << 4));
+
+        double score = TerrainAdequacy.scan(scanStep, schematicClipboard, workLoc, schematicOffset, TerrainAdequacy.ScanType.UNDERGROUND);
+        double minScore = (world.getEnvironment() == World.Environment.NETHER) ? 50 : 70;
+
+        if (score < minScore) return;
 
         if (score > highestScore) {
             highestScore = score;
-            location = iteratedLocation;
+            location = workLoc.clone(); // only clone when storing
         }
     }
 }

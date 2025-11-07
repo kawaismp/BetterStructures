@@ -12,10 +12,21 @@ import org.bukkit.util.Vector;
 
 public class FitSurfaceBuilding extends FitAnything {
 
-    //For commands
+    private static final Vector[] SEARCH_PATTERN = {
+            new Vector(0, 0, 0),    // Center
+            new Vector(-16, 0, 0),  // West
+            new Vector(16, 0, 0),   // East
+            new Vector(0, 0, -16),  // North
+            new Vector(0, 0, 16),   // South
+            new Vector(-32, 0, 0),  // Far West
+            new Vector(32, 0, 0),   // Far East
+            new Vector(0, 0, -32),  // Far North
+            new Vector(0, 0, 32)    // Far South
+    };
+
     public FitSurfaceBuilding(Chunk chunk, SchematicContainer schematicContainer) {
         super(schematicContainer);
-        super.structureType = GeneratorConfigFields.StructureType.SURFACE;
+        this.structureType = GeneratorConfigFields.StructureType.SURFACE;
         this.schematicContainer = schematicContainer;
         this.schematicClipboard = schematicContainer.getClipboard();
         scan(chunk);
@@ -23,72 +34,66 @@ public class FitSurfaceBuilding extends FitAnything {
 
     public FitSurfaceBuilding(Chunk chunk) {
         super();
-        super.structureType = GeneratorConfigFields.StructureType.SURFACE;
+        this.structureType = GeneratorConfigFields.StructureType.SURFACE;
         scan(chunk);
     }
 
     private void scan(Chunk chunk) {
-        //Note about the adjustments:
-        //The 8 offset on x and y is to center the anchor on the chunk
-        Location originalLocation = new Location(chunk.getWorld(), chunk.getX() * 16D, 0, chunk.getZ() * 16D).add(new Vector(8, 0, 8));
-        originalLocation.setY(originalLocation.getWorld().getHighestBlockYAt(originalLocation));
-        randomizeSchematicContainer(originalLocation, GeneratorConfigFields.StructureType.SURFACE);
-        if (schematicClipboard == null) {
-            //Bukkit.getLogger().info("Did not spawn structure in biome " + originalLocation.getBlock().getBiome() + " because no valid schematics exist for it.");
-            return;
-        }
+        World world = chunk.getWorld();
+        Location baseLocation = getChunkCenterLocation(chunk, world);
+
+        randomizeSchematicContainer(baseLocation, GeneratorConfigFields.StructureType.SURFACE);
+        if (schematicClipboard == null) return;
+
         schematicOffset = WorldEditUtils.getSchematicOffset(schematicClipboard);
+        findBestFit(baseLocation);
 
-        chunkScan(originalLocation, 0, 0);
-        if (highestScore < 50)
-            for (int chunkX = -searchRadius; chunkX < searchRadius + 1; chunkX++) {
-                for (int chunkZ = -searchRadius; chunkZ < searchRadius + 1; chunkZ++) {
-                    //Relief measure: instead of doing a 3x3 grid, this does a "+" shaped  pattern search - may want to remove this some day, if not optimal
-                    if (chunkX == -1 && chunkZ == -1 ||
-                            chunkX == 1 && chunkZ == 1 ||
-                            chunkX == -1 && chunkZ == 1 ||
-                            chunkX == 1 && chunkZ == -1) continue;
-                    chunkScan(originalLocation, chunkX, chunkZ);
-                    if (highestScore > 50) break;
-                }
-                if (highestScore > 50) break;
+        if (location != null) {
+            paste(location);
+        }
+    }
+
+    private static Location getChunkCenterLocation(Chunk chunk, World world) {
+        double x = (chunk.getX() << 4) + 8.0; // bit-shift instead of multiply for speed
+        double z = (chunk.getZ() << 4) + 8.0;
+        int y = world.getHighestBlockYAt((int) x, (int) z);
+        return new Location(world, x, y, z);
+    }
+
+    private void findBestFit(Location origin) {
+        double bestScore = evaluateLocation(origin);
+        if (bestScore > highestScore) {
+            highestScore = bestScore;
+            location = origin;
+        }
+
+        // Stop early if the first (center) location is already very good
+        if (highestScore >= 50) return;
+
+        // Try other offsets in order
+        for (Vector offset : SEARCH_PATTERN) {
+            if (offset.getX() == 0 && offset.getZ() == 0) continue;
+
+            Location loc = origin.clone().add(offset);
+            double score = evaluateLocation(loc);
+
+            if (score > highestScore) {
+                highestScore = score;
+                location = loc;
+
+                if (highestScore >= 50) break; // good enough
             }
-
-        if (location == null) {
-            //Bukkit.broadcastMessage("Yo your locations are whack!");
-            return;
-        }
-
-        //Bukkit.broadcastMessage("Fit with score = " + highestScore);
-
-        super.paste(location);
-    }
-
-    private void chunkScan(Location originalLocation, int chunkX, int chunkZ) {
-        Location iteratedLocation = originalLocation.clone().add(new Vector(chunkX * 16, 0, chunkZ * 16));
-
-        if (originalLocation.getWorld().getEnvironment().equals(World.Environment.NETHER)) startingScore = 200;
-        double score = Topology.scan(startingScore, scanStep, schematicClipboard, iteratedLocation, schematicOffset);
-
-        //Continue to the next scan in case of poor fit
-        if (score == 0) {
-            //Bukkit.getLogger().info("Exited because of scoring of individual points");
-            return;
-        }
-
-        double adequacyScore = TerrainAdequacy.scan(scanStep, schematicClipboard, iteratedLocation, schematicOffset, TerrainAdequacy.ScanType.SURFACE);
-        //Adequacy has an impact of 50% on the score
-        score += (.5 * adequacyScore);
-
-        if (score == 0) {
-            //Bukkit.getLogger().info("Exited because ground or surface fit was bad");
-            return;
-        }
-
-        if (score > highestScore) {
-            highestScore = score;
-            location = iteratedLocation;
         }
     }
 
+    private double evaluateLocation(Location loc) {
+        World world = loc.getWorld();
+        double start = (world.getEnvironment() == World.Environment.NETHER) ? 200 : this.startingScore;
+
+        double topology = Topology.scan(start, scanStep, schematicClipboard, loc, schematicOffset);
+        if (topology <= 0) return 0;
+
+        double adequacy = TerrainAdequacy.scan(scanStep, schematicClipboard, loc, schematicOffset, TerrainAdequacy.ScanType.SURFACE);
+        return topology + (0.5 * adequacy);
+    }
 }

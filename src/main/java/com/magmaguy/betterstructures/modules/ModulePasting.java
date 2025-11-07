@@ -68,20 +68,6 @@ public final class ModulePasting {
         batchPaste(WFCNodeDeque, interpretedSigns);
 
         createModularWorld(world, worldFolder);
-
-        // Send notification to players
-        for (Player player : Bukkit.getOnlinePlayers()) {
-            if (player.hasPermission("betterstructures.warn")) {
-                player.spigot().sendMessage(
-                        SpigotMessage.commandHoverMessage(
-                                "[BetterStructures] New dungeon started generating! Do not stop your server now. Click to teleport. Do \"/betterstructures silent\" to stop getting warnings!",
-                                "Click to teleport to " + startLocation.getWorld().getName() + ", " +
-                                        startLocation.getBlockX() + ", " + startLocation.getBlockY() + ", " + startLocation.getBlockZ(),
-                                "/betterstructures teleport " + startLocation.getWorld().getName() + " " +
-                                        startLocation.getBlockX() + " " + startLocation.getBlockY() + " " + startLocation.getBlockZ())
-                );
-            }
-        }
     }
 
     private static boolean isNbtRichMaterial(Material m) {

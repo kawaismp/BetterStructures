@@ -34,11 +34,6 @@ public final class BetterStructures extends JavaPlugin {
     @Override
     public void onEnable() {
         MetadataHandler.PLUGIN = this;
-        Bukkit.getLogger().info("    ____       __  __            _____ __                  __                      ");
-        Bukkit.getLogger().info("   / __ )___  / /_/ /____  _____/ ___// /________  _______/ /___  __________  _____");
-        Bukkit.getLogger().info("  / __  / _ \\/ __/ __/ _ \\/ ___/\\__ \\/ __/ ___/ / / / ___/ __/ / / / ___/ _ \\/ ___/");
-        Bukkit.getLogger().info(" / /_/ /  __/ /_/ /_/  __/ /   ___/ / /_/ /  / /_/ / /__/ /_/ /_/ / /  /  __(__  ) ");
-        Bukkit.getLogger().info("/_____/\\___/\\__/\\__/\\___/_/   /____/\\__/_/   \\__,_/\\___/\\__/\\__,_/_/   \\___/____/");
         // Plugin startup logic
         Bukkit.getLogger().info("[BetterStructures] Initialized version " + this.getDescription().getVersion() + "!");
         Bukkit.getPluginManager().registerEvents(new NewChunkLoadEvent(), this);
@@ -82,7 +77,7 @@ public final class BetterStructures extends JavaPlugin {
         if (Bukkit.getPluginManager().getPlugin("WorldGuard") != null &&
                 Bukkit.getPluginManager().getPlugin("EliteMobs") != null)
             Bukkit.getPluginManager().registerEvents(new WorldGuard(), this);
-        new Metrics(this, 19523);
+//        new Metrics(this, 19523);
     }
 
     @Override

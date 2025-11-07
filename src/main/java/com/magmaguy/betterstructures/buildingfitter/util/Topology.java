@@ -2,154 +2,148 @@ package com.magmaguy.betterstructures.buildingfitter.util;
 
 import com.magmaguy.betterstructures.util.SurfaceMaterials;
 import com.sk89q.worldedit.extent.clipboard.Clipboard;
-import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.World;
 import org.bukkit.util.Vector;
 
 import java.util.ArrayList;
-import java.util.Collections;
+import java.util.List;
 
 public class Topology {
-    public static double scan(double startingScore, int scanStep, Clipboard schematicClipboard, Location iteratedLocation, Vector schematicOffset) {
-        //if (schematicOffset == null) Bukkit.getLogger().info("oops the schematic offset is null");
-        double score = startingScore;
-        int width = schematicClipboard.getDimensions().x();
-        int depth = schematicClipboard.getDimensions().z();
 
-        ArrayList<Integer> heights = new ArrayList<>();
+    private static final int MAX_HEIGHT_DIFF = 20;
+    private static final int NETHER_SCAN_MIN_Y = 30;
+    private static final int NETHER_SCAN_MAX_Y = 100;
 
-        //Scans the topology to find a mesh of the highest locations for the entirety of the x and z axi. Also does the water / lava scan
-        score = scanHighestLocations(width, depth, scanStep, iteratedLocation, schematicOffset, heights, score);
-        if (score == 0) return 0;
+    public static double scan(double startingScore, int scanStep, Clipboard clipboard, Location origin, Vector offset) {
+        int width = clipboard.getDimensions().x();
+        int depth = clipboard.getDimensions().z();
 
-        //Detects extreme height differences which would immediately disqualify this scan
-        score = scanExtremeHeightDifferences(heights, score);
-        if (score == 0) return 0;
+        // Preallocate exact expected capacity to prevent resizes
+        int estimatedSize = ((width / scanStep) + 1) * ((depth / scanStep) + 1);
+        List<Integer> heights = new ArrayList<>(estimatedSize);
 
-        //Finds and sets the average height on the topology
-        int averageFloorLevel = setToAverageHeight(heights, iteratedLocation);
+        double score = scanHighestLocations(width, depth, scanStep, origin, offset, heights, startingScore);
+        if (score <= 75) return score;
 
-        //Scores the variation in terrain height
-        score = scoreTerrainHeightVariation(heights, averageFloorLevel, score);
+        if (hasExtremeHeightDifferences(heights)) return 0;
 
-        return score;
+        int avgY = computeAverageHeight(heights, origin);
+        return applyHeightVariationPenalty(heights, avgY, score);
     }
 
-    private static double scanHighestLocations(int width, int depth, int scanStep, Location iteratedLocation, Vector schematicOffset, ArrayList<Integer> heights, double score) {
-        int totalPointAmount = (int) Math.floor(Math.floor(width / (double) scanStep) * Math.floor(depth / (double) scanStep));
-        for (int x = 0; x < width; x += scanStep) {
-            for (int z = 0; z < depth; z += scanStep) {
-                Location projectedLocation = LocationProjector.project(iteratedLocation, new Vector(x, 0, z), schematicOffset);
-                projectedLocation = getHighestBlockAt(projectedLocation);
-                if (projectedLocation == null) {
-                    return 0;
+    private static double scanHighestLocations(int width, int depth, int step, Location origin, Vector offset, List<Integer> heights, double score) {
+        World world = origin.getWorld();
+        int totalPoints = (width / step) * (depth / step);
+        double penaltyPerPoint = 50.0 / totalPoints;
+
+        // Reusable objects
+        Location base = origin.clone();
+        Location loc = new Location(world, 0, 0, 0);
+        Vector delta = new Vector();
+
+        for (int x = 0; x < width; x += step) {
+            for (int z = 0; z < depth; z += step) {
+                delta.setX(x);
+                delta.setY(0);
+                delta.setZ(z);
+
+                LocationProjector.project(loc, base, delta, offset);
+                int y = getHighestBlockYAt(world, loc);
+
+                if (y == Integer.MIN_VALUE) return 0; // Invalid
+                Material type = world.getBlockAt(loc.getBlockX(), y, loc.getBlockZ()).getType();
+
+                // Water/lava penalty
+                if (type == Material.WATER || type == Material.LAVA) {
+                    score -= penaltyPerPoint;
+                    if (score < 75) return score;
                 }
-                int safeGuard = 0;
-                while (SurfaceMaterials.ignorable(projectedLocation.getBlock().getType())) {
-                    if (projectedLocation.getBlock().getType().equals(Material.VOID_AIR)) return 0;
-                    projectedLocation.setY(projectedLocation.getY() - 1);
-                    safeGuard++;
-                    if (safeGuard > 50) {
-                        Bukkit.getLogger().warning("Busted the 50 block cap for the tree scanner!");
-                        break;
-                    }
-                }
-                switch (projectedLocation.getBlock().getType()) {
-                    case WATER:
-                    case LAVA:
-                        score -= 50 / (double) totalPointAmount;
-                }
-                if (score < 75)
-                    return 0;
-                heights.add(projectedLocation.getBlockY());
+
+                heights.add(y);
             }
         }
         return score;
     }
 
-    private static Location getHighestBlockAt(Location location) {
-        if (!location.getWorld().getEnvironment().equals(World.Environment.NETHER))
-            return location.getWorld().getHighestBlockAt(location).getLocation();
-        else {
-            //This is middle point for the height in the Nether
-            location.setY(63);
-            //The nether has specific topology
-            if (SurfaceMaterials.ignorable(location.getBlock().getType())) {
-                //Basically air for all intents and purposes, scan down
-                for (int y = (int) location.getY(); y > 30; y--) {
-                    location.setY(y);
-                    if (validNetherSurface(location))
-                        return location;
-                }
-            } else {
-                //Solid, scan up
-                for (int y = (int) location.getY(); y < 100; y++) {
-                    location.setY(y);
-                    if (validNetherSurface(location))
-                        return location;
-                }
-            }
-            return null;
+    /**
+     * Optimized: directly returns Y value (avoids new Location allocations)
+     */
+    private static int getHighestBlockYAt(World world, Location loc) {
+        if (world.getEnvironment() != World.Environment.NETHER) {
+            return world.getHighestBlockYAt(loc);
         }
+        return getHighestBlockYAtNether(world, loc.getBlockX(), loc.getBlockZ());
     }
 
-    private static boolean validNetherSurface(Location location) {
-        //See if current block is solid and if the one above it is air or similar to air
-        if (!(!SurfaceMaterials.ignorable(location.getBlock().getType()) &&
-                SurfaceMaterials.ignorable(location.getBlock().getLocation().add(new Vector(0, 1, 0)).getBlock().getType())))
-            return false;
-        //Scan 10 blocks vertically to make sure they're all air
-        for (int i = 1; i < 11; i++) {
-            if (SurfaceMaterials.ignorable(location.clone().add(new Vector(0, i, 0)).getBlock().getType()))
-                continue;
-            return false;
+    /**
+     * Nether-specific terrain probing, returns surface Y or Integer.MIN_VALUE if not found.
+     */
+    private static int getHighestBlockYAtNether(World world, int x, int z) {
+        // Middle starting point
+        int y = 63;
+        Material initial = world.getBlockAt(x, y, z).getType();
+
+        if (SurfaceMaterials.ignorable(initial)) {
+            for (y = 63; y > NETHER_SCAN_MIN_Y; y--) {
+                if (isValidNetherSurface(world, x, y, z)) return y;
+            }
+        } else {
+            for (y = 63; y < NETHER_SCAN_MAX_Y; y++) {
+                if (isValidNetherSurface(world, x, y, z)) return y;
+            }
+        }
+        return Integer.MIN_VALUE;
+    }
+
+    private static boolean isValidNetherSurface(World world, int x, int y, int z) {
+        Material current = world.getBlockAt(x, y, z).getType();
+        Material above = world.getBlockAt(x, y + 1, z).getType();
+
+        // must be solid ground with air/ignorable above
+        if (SurfaceMaterials.ignorable(current) || !SurfaceMaterials.ignorable(above)) return false;
+
+        // ensure at least 10 blocks of air above
+        for (int i = y + 2; i < y + 12 && i <= 255; i++) {
+            if (!SurfaceMaterials.ignorable(world.getBlockAt(x, i, z).getType())) return false;
         }
         return true;
     }
 
-    //Checks for extreme height differences and establishes the mesh of heights to be checked later
-    private static double scanExtremeHeightDifferences(ArrayList<Integer> heights, double score) {
-        //Sort to make math on points faster
-        Collections.sort(heights);
-        //Check difference between lowest and highest points
-        if (Math.abs(heights.get(0) - heights.get(heights.size() - 1)) >= 20) {
-            //The schematicOffset between the lowest and highest blocks is too great
-            //Bukkit.getLogger().info("Exited because of extreme height difference");
-            return 0;
-        }
+    private static boolean hasExtremeHeightDifferences(List<Integer> heights) {
+        if (heights.size() < 2) return false;
 
-        return score;
+        int min = Integer.MAX_VALUE, max = Integer.MIN_VALUE;
+        for (int h : heights) {
+            if (h < min) min = h;
+            if (h > max) max = h;
+        }
+        return (max - min) >= MAX_HEIGHT_DIFF;
     }
 
-    //Determines and sets the average height for the paste
-    private static int setToAverageHeight(ArrayList<Integer> heights, Location iteratedLocation) {
-        //Find the average height
-        int averageFloorLevel = 0;
-        for (Integer integer : heights) {
-            averageFloorLevel += integer;
-        }
-        averageFloorLevel /= heights.size();
-
-        //Set the new average height, adds 1 because the Y value for the iterated location is actually the first air block above the ground
-        iteratedLocation.setY(averageFloorLevel + 1D);
-        return averageFloorLevel;
+    private static int computeAverageHeight(List<Integer> heights, Location origin) {
+        long sum = 0;
+        for (int h : heights) sum += h;
+        int avg = (int) (sum / heights.size());
+        origin.setY(avg + 1.0);
+        return avg;
     }
 
-    //Scores the terrain variation, less extreme is better
-    private static double scoreTerrainHeightVariation(ArrayList<Integer> heights, int averageFloorLevel, double score) {
-        //Score the difference between the average height and the heights of each individual location
-        for (Integer integer : heights) {
-            int difference = Math.abs(averageFloorLevel - integer);
-            if (difference < 3) continue;
-            //Max impact is 50% of the starting score divided by each point in the search
-            double maxImpact = score / 2D / heights.size();
-            //Calculate the score of this specific point, exponential formula
-            double currentHeightScore = (1 - Math.pow(difference, 2) * 4 / 100) * maxImpact;
-            score -= currentHeightScore;
-            if (score < 85)
-                return 0;
+    private static double applyHeightVariationPenalty(List<Integer> heights, int avgY, double score) {
+        final int n = heights.size();
+        if (n == 0) return score;
+
+        final double maxImpact = score * 0.5 / n; // 50% max penalty distributed evenly
+
+        for (int y : heights) {
+            int diff = Math.abs(y - avgY);
+            if (diff < 3) continue;
+
+            // Exponential penalty (clamped)
+            double penalty = (1 - diff * diff * 0.04) * maxImpact;
+            score -= penalty;
+            if (score < 85) return 0;
         }
         return score;
     }

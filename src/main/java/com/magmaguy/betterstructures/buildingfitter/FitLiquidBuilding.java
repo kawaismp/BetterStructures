@@ -7,11 +7,17 @@ import com.magmaguy.betterstructures.util.WorldEditUtils;
 import org.bukkit.Chunk;
 import org.bukkit.Location;
 import org.bukkit.Material;
+import org.bukkit.World;
 import org.bukkit.util.Vector;
 
 public class FitLiquidBuilding extends FitAnything {
 
-    //For commands
+    // Reusable objects to avoid allocation
+    private static final Vector CHUNK_CENTER_OFFSET = new Vector(8, 0, 8);
+    private static final int NETHER_LAVA_OCEAN_HEIGHT = 31;
+    private final Location reusableLocation = new Location(null, 0, 0, 0);
+
+    // For commands
     public FitLiquidBuilding(Chunk chunk, SchematicContainer schematicContainer) {
         super(schematicContainer);
         super.structureType = GeneratorConfigFields.StructureType.LIQUID_SURFACE;
@@ -27,63 +33,122 @@ public class FitLiquidBuilding extends FitAnything {
     }
 
     private void scan(Chunk chunk) {
-        //Note about the adjustments:
-        //The 8 offset on x and y is to center the anchor on the chunk
-        Location originalLocation = new Location(chunk.getWorld(), chunk.getX() * 16D, 0, chunk.getZ() * 16D).add(new Vector(8, 0, 8));
-        //This gets the location of the highest solid block
-        originalLocation.setY(originalLocation.getWorld().getHighestBlockYAt(originalLocation));
+        World world = chunk.getWorld();
 
-        switch (chunk.getWorld().getEnvironment()) {
-            case CUSTOM:
-            case NORMAL:
-                if (!originalLocation.getBlock().isLiquid()) return;
-                break;
-            case NETHER:
-                int netherLavaOceanHeight = 31;
-                originalLocation.setY(netherLavaOceanHeight);
-                if (originalLocation.getBlock().getType() != Material.LAVA) {
-                    return;
-                }
-                for (int i = 1; i < 20; i++)
-                    if (!originalLocation.clone().add(new Vector(0, i, 0)).getBlock().getType().isAir()) {
-                        return;
-                    }
+        // Calculate base location with minimal object creation
+        Location originalLocation = calculateBaseLocation(chunk, world);
+
+        // Check if location is valid for liquid structure
+        if (!isValidLiquidLocation(originalLocation, world)) {
+            return;
         }
 
         randomizeSchematicContainer(originalLocation, GeneratorConfigFields.StructureType.LIQUID_SURFACE);
         if (schematicClipboard == null) {
-            //Bukkit.getLogger().info("Did not spawn structure in biome " + originalLocation.getBlock().getBiome() + " because no valid schematics exist for it.");
             return;
         }
+
         schematicOffset = WorldEditUtils.getSchematicOffset(schematicClipboard);
 
-        chunkScan(originalLocation, 0, 0);
-        if (highestScore < 90)
-            for (int chunkX = -searchRadius; chunkX < searchRadius + 1; chunkX++) {
-                for (int chunkZ = -searchRadius; chunkZ < searchRadius + 1; chunkZ++) {
-                    if (chunkX == 0 && chunkZ == 0) continue;
-                    chunkScan(originalLocation, chunkX, chunkZ);
-                    if (highestScore >= 90) break;
-                }
-                if (highestScore >= 90) break;
-            }
+        // Search for optimal placement
+        searchOptimalPlacement(originalLocation);
 
         if (location == null) {
-            //Bukkit.broadcastMessage("Yo your locations are whack!");
             return;
         }
 
         super.paste(location);
     }
 
-    private void chunkScan(Location originalLocation, int chunkX, int chunkZ) {
-        Location iteratedLocation = originalLocation.clone().add(new Vector(chunkX * 16, 1, chunkZ * 16));
-        double newScore = TerrainAdequacy.scan(scanStep, schematicClipboard, iteratedLocation, schematicOffset, TerrainAdequacy.ScanType.LIQUID);
-        if (newScore < 90) return;
-        if (newScore == startingScore) {
-            highestScore = newScore;
-            location = iteratedLocation;
+    private Location calculateBaseLocation(Chunk chunk, World world) {
+        double x = chunk.getX() * 16.0 + 8.0;
+        double z = chunk.getZ() * 16.0 + 8.0;
+        Location location = new Location(world, x, 0, z);
+        location.setY(world.getHighestBlockYAt(location));
+        return location;
+    }
+
+    private boolean isValidLiquidLocation(Location location, World world) {
+        World.Environment environment = world.getEnvironment();
+
+        switch (environment) {
+            case CUSTOM:
+            case NORMAL:
+                return location.getBlock().isLiquid();
+
+            case NETHER:
+                location.setY(NETHER_LAVA_OCEAN_HEIGHT);
+                if (location.getBlock().getType() != Material.LAVA) {
+                    return false;
+                }
+                // Check that there's air above for placement
+                return hasClearAirAbove(location);
+
+            default:
+                return false;
         }
     }
 
+    private boolean hasClearAirAbove(Location location) {
+        int startX = location.getBlockX();
+        int startZ = location.getBlockZ();
+        World world = location.getWorld();
+        int startY = location.getBlockY() + 1;
+
+        for (int y = startY; y < startY + 20; y++) {
+            if (y > world.getMaxHeight()) break;
+            Material blockType = world.getBlockAt(startX, y, startZ).getType();
+            if (!blockType.isAir()) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private void searchOptimalPlacement(Location originalLocation) {
+        // First try center chunk
+        if (chunkScan(originalLocation, 0, 0) && highestScore >= 90) {
+            return;
+        }
+
+        // Then search surrounding chunks in expanding pattern
+        for (int radius = 1; radius <= searchRadius; radius++) {
+            for (int chunkX = -radius; chunkX <= radius; chunkX++) {
+                for (int chunkZ = -radius; chunkZ <= radius; chunkZ++) {
+                    // Only check the outer ring of this radius
+                    if (Math.abs(chunkX) != radius && Math.abs(chunkZ) != radius) {
+                        continue;
+                    }
+
+                    if (chunkScan(originalLocation, chunkX, chunkZ) && highestScore >= 90) {
+                        return;
+                    }
+                }
+            }
+        }
+    }
+
+    private boolean chunkScan(Location originalLocation, int chunkX, int chunkZ) {
+        // Calculate offset directly without creating new Vector
+        double offsetX = chunkX * 16.0;
+        double offsetZ = chunkZ * 16.0;
+
+        reusableLocation.setWorld(originalLocation.getWorld());
+        reusableLocation.setX(originalLocation.getX() + offsetX);
+        reusableLocation.setY(originalLocation.getY() + 1); // Add 1 as in original code
+        reusableLocation.setZ(originalLocation.getZ() + offsetZ);
+
+        double newScore = TerrainAdequacy.scan(scanStep, schematicClipboard, reusableLocation, schematicOffset, TerrainAdequacy.ScanType.LIQUID);
+
+        if (newScore < 90) {
+            return false;
+        }
+
+        if (newScore > highestScore) {
+            highestScore = newScore;
+            location = reusableLocation.clone(); // Clone for storage
+        }
+
+        return true;
+    }
 }

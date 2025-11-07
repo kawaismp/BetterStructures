@@ -153,11 +153,10 @@ public class NewChunkLoadEvent implements Listener {
         if ((gridZ & 1) != 0) baseX += gridDistance / 2;
 
         long combinedSeed = seed ^ (((long) baseX << 32) ^ (baseZ & 0xFFFFFFFFL));
-        Random random = ThreadLocalRandom.current();
-        random.setSeed(combinedSeed);
+        SplittableRandom random = new SplittableRandom(combinedSeed);
 
-        int offsetX = maxOffset > 0 ? random.nextInt(maxOffset * 2 + 1) - maxOffset : 0;
-        int offsetZ = maxOffset > 0 ? random.nextInt(maxOffset * 2 + 1) - maxOffset : 0;
+        int offsetX = maxOffset > 0 ? random.nextInt(-maxOffset, maxOffset + 1) : 0;
+        int offsetZ = maxOffset > 0 ? random.nextInt(-maxOffset, maxOffset + 1) : 0;
 
         return chunkX == baseX + offsetX && chunkZ == baseZ + offsetZ;
     }
